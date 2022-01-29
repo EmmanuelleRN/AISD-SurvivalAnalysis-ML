@@ -1,0 +1,47 @@
+---
+title: "~"
+subtitle: " "
+date: " "
+output:
+  xaringan::moon_reader:
+    css: [default, my_css.css, metropolis-fonts]
+    lib_dir: libs
+    nature:
+      ratio: '16:9'
+      slideNumberFormat: '%current%'
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+class:regression
+
+<!-- css: [default, duke-blue, hygge-duke] -->
+
+```{r setup, echo=FALSE}
+options(htmltools.dir.version = FALSE)
+xaringanExtra::use_logo('www/channels4_profile-removebg-preview.png')
+```
+
+```{r include=FALSE}
+library(dplyr)
+```
+
+```{css, echo = F}
+.regression table {
+  font-size: 12px;     
+}
+
+.dataTables_info{
+  font-size: 10px;
+}
+
+.dataTables_paginate{
+  font-size: 10px;
+}
+
+.dataTables_length{
+  font-size: 10px;
+}
+```
+
