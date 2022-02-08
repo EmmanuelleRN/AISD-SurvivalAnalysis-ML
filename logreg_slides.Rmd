@@ -14,7 +14,8 @@ output:
       countIncrementalSlides: false
 ---
 
-class:regression
+class: class: center, middle, inverse
+
 
 <!-- css: [default, duke-blue, hygge-duke] -->
 
@@ -25,6 +26,7 @@ xaringanExtra::use_logo('www/channels4_profile-removebg-preview.png')
 
 ```{r include=FALSE}
 library(dplyr)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
 ```{css, echo = F}
@@ -43,5 +45,226 @@ library(dplyr)
 .dataTables_length{
   font-size: 10px;
 }
+```
+
+
+# Survival Analysis
+
+---
+
+# Survival Analysis - Recapping
+
+**Survival analysis** lets you analyze the rates of occurrence of events over time, without assuming the rates are constant. It lets you model:
+
+- Time until an event occurs
+- Compare the time-to-event between different groups
+- Assess how time-to-event correlates with quantitative variables
+
+For example:
+
+- Time from surgery to death
+- Time from start of treatment to cancer progression
+- Time from HIV infection to development of AIDS
+- Time to heart attack
+- Time to onset of substance abuse
+- Time to initiation of sexual activity
+- Time to machine malfunction
+
+---
+
+# Definitions
+
+The **hazard** is the instantaneous event (death) rate at a particular time point $t$. 
+  - Survival analysis **doesn’t** assume the hazard is constant over time. 
+  - The cumulative hazard is the total hazard experienced up to time $t$.
+
+The **survival function**, is the probability an individual survives (or, the probability that the event of interest does not occur) up to and including time $t$. 
+  - It’s the probability that the event hasn’t occurred yet. 
+
+$$\mathbb{S}(t)=\mathbb{P}(T>t),$$
+---
+
+# Definitions - Kaplan-Meier 
+
+where $T$ is the time of death
+
+The **Kaplan-Meier** curve illustrates the survival function. 
+- It estimates $\mathbb{S}(t)$
+- It’s a step function illustrating the cumulative survival probability over time.
+
+$$\hat{\mathbb{S}}(t) = \prod_{t_i<t}\left({1 - \frac{d_i}{n_i}}\right),$$
+
+where $d_i$ is the number of subjects that died (or experienced the event of interest) at time $t_i$, and $n_i$ is the number of subjects at risk at time $t_i$.
+
+---
+
+# Definitions - Censoring
+
+.pull-left[
+**Censoring** is a type of missing data problem unique to survival analysis.
+- It occurs when you track the sample/subject through the end of the study and the event never occurs, i.e., no event by end of fixed study period
+- It could also happen due to the sample/subject dropping out of the study for reasons other than death, i.e., withdrawn from study
+- It could also happen due to loss to followup,
+
+If the sample is censored, you only know that the individual survived up to the loss to followup, but you do not know anything about survival after that.
+
+Specifically these are examples of **right censoring**.
+
+Left censoring and interval censoring are also possible, and methods exist to analyze this type of data, but this training will be limited to right censoring.]
+
+.pull-right[
+
+```{r swimmer, echo = FALSE}
+library(tibble)
+library(ggplot2)
+# make fake data
+set.seed(20180809)
+fkdt <- tibble(Subject = as.factor(1:10), 
+               Years = sample(4:20, 10, replace = T),
+               censor = sample(c("Censor", rep("Event", 2)), 10, replace = T)) 
+
+# plot with shapes to indicate censoring or event
+ggplot(fkdt, aes(Subject, Years)) + 
+    geom_bar(stat = "identity", width = 0.5) + 
+    geom_point(data = fkdt, 
+               aes(Subject, Years, color = censor, shape = censor), 
+               size = 6) +
+    coord_flip() +
+    geom_hline(yintercept = 10) +
+    geom_text(aes(0,  10,label = "end of study", vjust = 1, angle = 90, 
+                  hjust = -.5)) +
+    theme_minimal() + 
+    theme(legend.title = element_blank(),
+          legend.position = "bottom")
+```
+
+]
+
+---
+
+# Survival Analysis in R
+
+Packages we will use for this example:
+
+- **survival** 
+  - The core functions for this type of analysis are available in this library
+  - It is a part of the standard R packages, so you don't need to `install.packages()` before using it
+- **dplyr**
+  - Data manipulation
+- **survminer**
+  - Better visualization for Kaplan-Meier plots
+  
+For the example we will use the dataset `lung` that is available within the survival package.
+  
+```{r}
+library(survival)
+library(dplyr)
+library(survminer)
+
+head(lung, 3)
+```
+
+---
+
+# Example - Lung
+
+We can see the dimensions of the dataset by using the function `dim()` from base R. The first value represent the rows, in this example `r nrow(lung)` and the second represents the columns, `r ncol(lung)` in the example.
+
+```{r}
+dim(lung)
+```
+.pull-left[
+The 10 columns represent:
+
+- **inst:** Institution code
+- **time:** Survival time in days
+- **status:** censoring status 1 = censored, 2 = dead
+- **age:** Age in years
+- **sex:** Male = 1, Female = 2
+- **ph.ecog:** ECOG performance (0 = good, 5 = dead)
+- **ph.karno:** Karnofsky performance rated by physician
+- **pat.karno:** Karnofsky performance rated by patient
+- **meal.cal:** Calories consumed at meals
+- **wt.loss:** Weight loss in last six months
+]
+
+.pull-right[
+```{r}
+glimpse(lung)
+```
+
+]
+---
+
+# Distribution of follow-up time
+
+.pull-left[
+
+- Censored subjects still provide information so must be appropriately included in the analysis
+- Distribution of follow-up times is skewed, and may differ between censored patients and those with events
+-Follow-up times are always positive
+
+```{r echo = T, eval = FALSE}
+ggplot(lung, aes(x = time, 
+                 fill = as.factor(status))) +
+  geom_histogram(bins = 25, 
+                 alpha = 0.6, 
+                 position = "identity") +
+  scale_fill_manual(values = c("blue", "red"), 
+                    labels = c("Censored", 
+                               "Dead")) +
+  labs(x = "Days",
+       y = "Count")
+```
+
+]
+
+.pull-right[
+
+```{r echo=FALSE}
+ggplot(lung, aes(x = time, fill = as.factor(status))) +
+  geom_histogram(bins = 25, alpha = 0.6, position = "identity") +
+  scale_fill_manual(values = c("blue", "red"), labels = c("Censored", "Dead")) +
+  labs(x = "Days",
+       y = "Count")
+```
+
+]
+
+---
+
+# Kaplan-Meier Analysis
+
+The first thing to do is to use `Surv()` from `survival` to build the standard survival object. 
+
+The most important parameters are:
+- `time`: Follow-up time for right censored data; for interval data it represents the start time of the interval
+- `event`: Normally 0 = alive, 1 = dead
+- `time2`: Ending time of the interval for interval censored
+- `type`: Type of censoring
+  - Options: "right", "left", "counting", "interval", "interval2" or "mstate"
+  - Default: "right"
+
+> Note that a “+” after the time in the print out of km indicates censoring.
+
+```{r}
+km <- Surv(lung$time, lung$status)
+head(km, 10)
+```
+
+---
+
+# Kaplan-Meier Analysis
+
+Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any different groupings.
+- We'll need to specify an intercept (represented by `~1` in the formula that survfit expects). 
+
+We can 'model' the survival object `km` we created against an intercept
+- We can do this in one step by nesting the `Surv()` function within `survfit()`
+- Similarly to how we specify data for linear models with `lm()`, we'll use the `data =` argument to specify which data we’re using. 
+
+```{r}
+km_fit <- surv_fit(Surv(time, status) ~ 1, data = lung)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
 ```
 
