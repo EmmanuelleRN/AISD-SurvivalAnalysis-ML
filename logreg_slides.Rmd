@@ -96,6 +96,8 @@ $$\hat{\mathbb{S}}(t) = \prod_{t_i<t}\left({1 - \frac{d_i}{n_i}}\right),$$
 
 where $d_i$ is the number of subjects that died (or experienced the event of interest) at time $t_i$, and $n_i$ is the number of subjects at risk at time $t_i$.
 
+At time 0, the survival probability is 1, i.e., $S(t_0) = 1$
+
 ---
 
 # Definitions - Censoring
@@ -264,7 +266,125 @@ We can 'model' the survival object `km` we created against an intercept
 - Similarly to how we specify data for linear models with `lm()`, we'll use the `data =` argument to specify which data we’re using. 
 
 ```{r}
-km_fit <- surv_fit(Surv(time, status) ~ 1, data = lung)
-summary(km_fit, times = c(1,30,60,90*(1:10)))
+km_fit <- survfit(Surv(time, status) ~ 1, data = lung)
+summary(km_fit, times = c(1, 30, 60, 90))
 ```
 
+---
+
+# Kaplan-Meier Plot
+
+.pull-left[
+
+- The `ggsurvplot` function from the `survminer` package is built on ggplot2, and can be used to create Kaplan-Meier plots.
+- The default plot shows the step function (solid line) with associated confidence bands (shaded area).
+- The tick marks representing censored patients are shown by default (can be suppressed using the option `censor = FALSE`)
+
+]
+
+.pull-right[
+```{r}
+ggsurvplot(km_fit)
+```
+
+]
+
+---
+
+# Estimating x-year survival
+
+.pull-left[
+Often of interest is the probability of surviving beyond a certain number ($x$) of years.
+
+For example, to estimate the probability of surviving to $1$ year:
+- Use `summary` with the `times` argument 
+- *Note* the `time` variable in the `lung` data is actually in days
+
+```{r}
+summary(km_fit, times = 365)
+```
+
+The $1$-year probability of survival in this study is `r round(summary(km_fit, times = 365.25)$surv * 100, 2)`%. 
+
+]
+
+.pull-right[
+```{r, message = FALSE, echo = FALSE, fig.height = 5}
+plot_main <- 
+  ggsurvplot(
+    data = lung, 
+    fit = km_fit,
+    xlab = "Months",
+    legend = "none",
+    xscale = 30.4,
+    break.x.by = 182.4, 
+    risk.table = TRUE,
+    risk.table.y.text = FALSE)
+plot1 <- plot_main
+plot1$plot <- plot1$plot + 
+  geom_segment(x = 365, xend = 365, y = -0.05, yend = 0.4092416, 
+               size = 1.5) +
+  geom_segment(x = 365, xend = -40, y = 0.4092416, yend = 0.4092416,
+               size = 1.5, 
+               arrow = arrow(length = unit(0.2, "inches"))) 
+plot1
+```
+
+---
+
+# Estimating median survival time
+
+.pull-left[
+
+Another quantity often of interest is the **median survival time**.
+- We can obtain this directly from the `survfit` object
+
+```{r}
+km_fit
+```
+
+We see the median survival time is `r round(summary(km_fit)$table["median"], 1)` days 
+- The 95% confidence interval is also displayed.
+]
+
+.pull-right[
+
+Median survival is the time corresponding to a survival probability of $0.5$: 
+
+```{r, message = FALSE, echo = FALSE, fig.height = 5}
+plot2 <- plot_main
+plot2$plot <- plot2$plot + 
+  geom_segment(x = -45, xend = 310, y = 0.5, yend = 0.5,  size = 1.5) +
+  geom_segment(x = 310, xend = 310, y = 0.5, yend = -0.03, size = 1.5, 
+               arrow = arrow(length = unit(0.2, "inches")))
+plot2
+```
+
+]
+
+---
+
+# $x$-year survival and the survival curve
+
+The $1$-year survival probability is the point on the y-axis that corresponds to $1$ year on the x-axis for the survival curve.
+
+```{r, message = FALSE, echo = FALSE, fig.height = 5}
+plot_main <- 
+  ggsurvplot(
+    data = lung, 
+    fit = km_fit,
+    xlab = "Months",
+    legend = "none",
+    xscale = 30.4,
+    break.x.by = 182.4, 
+    risk.table = TRUE,
+    risk.table.y.text = FALSE)
+plot1 <- plot_main
+plot1$plot <- plot1$plot + 
+  geom_segment(x = 365, xend = 365, y = -0.05, yend = 0.4092416, 
+               size = 1.5) +
+  geom_segment(x = 365, xend = -40, y = 0.4092416, yend = 0.4092416,
+               size = 1.5, 
+               arrow = arrow(length = unit(0.2, "inches"))) 
+plot1
+```
