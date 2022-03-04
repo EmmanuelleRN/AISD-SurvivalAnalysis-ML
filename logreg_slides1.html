@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>~</title>
+    <meta charset="utf-8" />
+    <script src="libs/header-attrs/header-attrs.js"></script>
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/metropolis-fonts.css" rel="stylesheet" />
+    <link rel="stylesheet" href="my_css.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# ~
+
+---
+
+
+class: class: center, middle, inverse
+
+
+&lt;!-- css: [default, duke-blue, hygge-duke] --&gt;
+
+<div>
+<style type="text/css">.xaringan-extra-logo {
+width: 110px;
+height: 128px;
+z-index: 0;
+background-image: url(www/channels4_profile-removebg-preview.png);
+background-size: contain;
+background-repeat: no-repeat;
+position: absolute;
+top:1em;right:1em;
+}
+</style>
+<script>(function () {
+  let tries = 0
+  function addLogo () {
+    if (typeof slideshow === 'undefined') {
+      tries += 1
+      if (tries < 10) {
+        setTimeout(addLogo, 100)
+      }
+    } else {
+      document.querySelectorAll('.remark-slide-content:not(.title-slide):not(.inverse):not(.hide_logo)')
+        .forEach(function (slide) {
+          const logo = document.createElement('div')
+          logo.classList = 'xaringan-extra-logo'
+          logo.href = null
+          slide.appendChild(logo)
+        })
+    }
+  }
+  document.addEventListener('DOMContentLoaded', addLogo)
+})()</script>
+</div>
+
+
+
+&lt;style type="text/css"&gt;
+.regression table {
+  font-size: 12px;     
+}
+
+.dataTables_info{
+  font-size: 10px;
+}
+
+.dataTables_paginate{
+  font-size: 10px;
+}
+
+.dataTables_length{
+  font-size: 10px;
+}
+&lt;/style&gt;
+
+
+# Survival Analysis
+
+---
+
+# Survival Analysis - Recapping
+
+**Survival analysis** lets you analyze the rates of occurrence of events over time, without assuming the rates are constant. It lets you model:
+
+- Time until an event occurs
+- Compare the time-to-event between different groups
+- Assess how time-to-event correlates with quantitative variables
+
+For example:
+
+- Time from surgery to death
+- Time from start of treatment to cancer progression
+- Time from HIV infection to development of AIDS
+- Time to heart attack
+- Time to onset of substance abuse
+- Time to initiation of sexual activity
+- Time to machine malfunction
+
+---
+
+# Definitions
+
+The **hazard** is the instantaneous event (death) rate at a particular time point `\(t\)`. 
+  - Survival analysis **doesn’t** assume the hazard is constant over time. 
+  - The cumulative hazard is the total hazard experienced up to time `\(t\)`.
+
+The **survival function**, is the probability an individual survives (or, the probability that the event of interest does not occur) up to and including time `\(t\)`. 
+  - It’s the probability that the event hasn’t occurred yet. 
+
+`$$\mathbb{S}(t)=\mathbb{P}(T&gt;t),$$`
+---
+
+# Definitions - Kaplan-Meier 
+
+where `\(T\)` is the time of death
+
+The **Kaplan-Meier** curve illustrates the survival function. 
+- It estimates `\(\mathbb{S}(t)\)`
+- It’s a step function illustrating the cumulative survival probability over time.
+
+`$$\hat{\mathbb{S}}(t) = \prod_{t_i&lt;t}\left({1 - \frac{d_i}{n_i}}\right),$$`
+
+where `\(d_i\)` is the number of subjects that died (or experienced the event of interest) at time `\(t_i\)`, and `\(n_i\)` is the number of subjects at risk at time `\(t_i\)`.
+
+At time 0, the survival probability is 1, i.e., `\(S(t_0) = 1\)`
+
+---
+
+# Definitions - Censoring
+
+.pull-left[
+**Censoring** is a type of missing data problem unique to survival analysis.
+- It occurs when you track the sample/subject through the end of the study and the event never occurs, i.e., no event by end of fixed study period
+- It could also happen due to the sample/subject dropping out of the study for reasons other than death, i.e., withdrawn from study
+- It could also happen due to loss to followup,
+
+If the sample is censored, you only know that the individual survived up to the loss to followup, but you do not know anything about survival after that.
+
+Specifically these are examples of **right censoring**.
+
+Left censoring and interval censoring are also possible, and methods exist to analyze this type of data, but this training will be limited to right censoring.]
+
+.pull-right[
+
+![](logreg_slides_files/figure-html/swimmer-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+# Survival Analysis in R
+
+Packages we will use for this example:
+
+- **survival** 
+  - The core functions for this type of analysis are available in this library
+  - It is a part of the standard R packages, so you don't need to `install.packages()` before using it
+- **dplyr**
+  - Data manipulation
+- **survminer**
+  - Better visualization for Kaplan-Meier plots
+  
+For the example we will use the dataset `lung` that is available within the survival package.
+  
+
+```r
+library(survival)
+library(dplyr)
+library(survminer)
+
+head(lung, 3)
+```
+
+```
+##   inst time status age sex ph.ecog ph.karno pat.karno meal.cal wt.loss
+## 1    3  306      2  74   1       1       90       100     1175      NA
+## 2    3  455      2  68   1       0       90        90     1225      15
+## 3    3 1010      1  56   1       0       90        90       NA      15
+```
+
+---
+
+# Example - Lung
+
+We can see the dimensions of the dataset by using the function `dim()` from base R. The first value represent the rows, in this example 228 and the second represents the columns, 10 in the example.
+
+
+```r
+dim(lung)
+```
+
+```
+## [1] 228  10
+```
+.pull-left[
+The 10 columns represent:
+
+- **inst:** Institution code
+- **time:** Survival time in days
+- **status:** censoring status 1 = censored, 2 = dead
+- **age:** Age in years
+- **sex:** Male = 1, Female = 2
+- **ph.ecog:** ECOG performance (0 = good, 5 = dead)
+- **ph.karno:** Karnofsky performance rated by physician
+- **pat.karno:** Karnofsky performance rated by patient
+- **meal.cal:** Calories consumed at meals
+- **wt.loss:** Weight loss in last six months
+]
+
+.pull-right[
+
+```r
+glimpse(lung)
+```
+
+```
+## Rows: 228
+## Columns: 10
+## $ inst      &lt;dbl&gt; 3, 3, 3, 5, 1, 12, 7, 11, 1, 7, 6, 16, 11, 21, 12, 1, 22, 16~
+## $ time      &lt;dbl&gt; 306, 455, 1010, 210, 883, 1022, 310, 361, 218, 166, 170, 654~
+## $ status    &lt;dbl&gt; 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, ~
+## $ age       &lt;dbl&gt; 74, 68, 56, 57, 60, 74, 68, 71, 53, 61, 57, 68, 68, 60, 57, ~
+## $ sex       &lt;dbl&gt; 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 2, 1, ~
+## $ ph.ecog   &lt;dbl&gt; 1, 0, 0, 1, 0, 1, 2, 2, 1, 2, 1, 2, 1, NA, 1, 1, 1, 2, 2, 1,~
+## $ ph.karno  &lt;dbl&gt; 90, 90, 90, 90, 100, 50, 70, 60, 70, 70, 80, 70, 90, 60, 80,~
+## $ pat.karno &lt;dbl&gt; 100, 90, 90, 60, 90, 80, 60, 80, 80, 70, 80, 70, 90, 70, 70,~
+## $ meal.cal  &lt;dbl&gt; 1175, 1225, NA, 1150, NA, 513, 384, 538, 825, 271, 1025, NA,~
+## $ wt.loss   &lt;dbl&gt; NA, 15, 15, 11, 0, 0, 10, 1, 16, 34, 27, 23, 5, 32, 60, 15, ~
+```
+
+]
+---
+
+# Distribution of follow-up time
+
+.pull-left[
+
+- Censored subjects still provide information so must be appropriately included in the analysis
+- Distribution of follow-up times is skewed, and may differ between censored patients and those with events
+-Follow-up times are always positive
+
+
+```r
+ggplot(lung, aes(x = time, 
+                 fill = as.factor(status))) +
+  geom_histogram(bins = 25, 
+                 alpha = 0.6, 
+                 position = "identity") +
+  scale_fill_manual(values = c("blue", "red"), 
+                    labels = c("Censored", 
+                               "Dead")) +
+  labs(x = "Days",
+       y = "Count")
+```
+
+]
+
+.pull-right[
+
+![](logreg_slides_files/figure-html/unnamed-chunk-7-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+# Kaplan-Meier Analysis
+
+The first thing to do is to use `Surv()` from `survival` to build the standard survival object. 
+
+The most important parameters are:
+- `time`: Follow-up time for right censored data; for interval data it represents the start time of the interval
+- `event`: Normally 0 = alive, 1 = dead
+- `time2`: Ending time of the interval for interval censored
+- `type`: Type of censoring
+  - Options: "right", "left", "counting", "interval", "interval2" or "mstate"
+  - Default: "right"
+
+&gt; Note that a “+” after the time in the print out of km indicates censoring.
+
+
+```r
+km &lt;- Surv(lung$time, lung$status)
+head(km, 10)
+```
+
+```
+##  [1]  306   455  1010+  210   883  1022+  310   361   218   166
+```
+
+---
+
+# Kaplan-Meier Analysis
+
+Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any different groupings.
+- We'll need to specify an intercept (represented by `~1` in the formula that survfit expects). 
+
+We can 'model' the survival object `km` we created against an intercept
+- We can do this in one step by nesting the `Surv()` function within `survfit()`
+- Similarly to how we specify data for linear models with `lm()`, we'll use the `data =` argument to specify which data we’re using. 
+
+
+```r
+km_fit &lt;- survfit(Surv(time, status) ~ 1, data = lung)
+summary(km_fit, times = c(1, 30, 60, 90))
+```
+
+```
+## Call: survfit(formula = Surv(time, status) ~ 1, data = lung)
+## 
+##  time n.risk n.event survival std.err lower 95% CI upper 95% CI
+##     1    228       0    1.000  0.0000        1.000        1.000
+##    30    219      10    0.956  0.0136        0.930        0.983
+##    60    213       7    0.925  0.0174        0.892        0.960
+##    90    201      10    0.882  0.0214        0.841        0.925
+```
+
+---
+
+# Kaplan-Meier Plot
+
+.pull-left[
+
+- The `ggsurvplot` function from the `survminer` package is built on ggplot2, and can be used to create Kaplan-Meier plots.
+- The default plot shows the step function (solid line) with associated confidence bands (shaded area).
+- The tick marks representing censored patients are shown by default (can be suppressed using the option `censor = FALSE`)
+
+]
+
+.pull-right[
+
+```r
+ggsurvplot(km_fit)
+```
+
+![](logreg_slides_files/figure-html/unnamed-chunk-10-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+# Estimating x-year survival
+
+.pull-left[
+Often of interest is the probability of surviving beyond a certain number ($x$) of years.
+
+For example, to estimate the probability of surviving to `\(1\)` year:
+- Use `summary` with the `times` argument 
+- *Note* the `time` variable in the `lung` data is actually in days
+
+
+```r
+summary(km_fit, times = 365)
+```
+
+```
+## Call: survfit(formula = Surv(time, status) ~ 1, data = lung)
+## 
+##  time n.risk n.event survival std.err lower 95% CI upper 95% CI
+##   365     65     121    0.409  0.0358        0.345        0.486
+```
+
+The `\(1\)`-year probability of survival in this study is 40.92%. 
+
+]
+
+.pull-right[
+![](logreg_slides_files/figure-html/unnamed-chunk-12-1.png)&lt;!-- --&gt;
+
+---
+
+# Estimating median survival time
+
+.pull-left[
+
+Another quantity often of interest is the **median survival time**.
+- We can obtain this directly from the `survfit` object
+
+
+```r
+km_fit
+```
+
+```
+## Call: survfit(formula = Surv(time, status) ~ 1, data = lung)
+## 
+##        n events median 0.95LCL 0.95UCL
+## [1,] 228    165    310     285     363
+```
+
+We see the median survival time is 310 days 
+- The 95% confidence interval is also displayed.
+]
+
+.pull-right[
+
+Median survival is the time corresponding to a survival probability of `\(0.5\)`: 
+
+![](logreg_slides_files/figure-html/unnamed-chunk-14-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+# Comparing survival times between groups
+
+.pull-left[
+- The **log-rank test** equally weights observations over the entire follow-up time
+  - Most common way to compare survival times between groups
+
+We get the log-rank p-value using the `survdiff` function. For example, we can test whether there was a difference in survival time according to sex.
+
+
+```r
+survdiff(Surv(time, status) ~ sex, data = lung)
+```
+
+```
+## Call:
+## survdiff(formula = Surv(time, status) ~ sex, data = lung)
+## 
+##         N Observed Expected (O-E)^2/E (O-E)^2/V
+## sex=1 138      112     91.6      4.55      10.3
+## sex=2  90       53     73.4      5.68      10.3
+## 
+##  Chisq= 10.3  on 1 degrees of freedom, p= 0.001
+```
+
+]
+
+.pull-right[
+
+```r
+ggsurvplot(survfit(Surv(time, status) ~ sex, 
+                   data = lung), 
+           pval = TRUE)
+```
+
+![](logreg_slides_files/figure-html/unnamed-chunk-16-1.png)&lt;!-- --&gt;
+
+]
+
+---
+
+# Cox-Regression
+
+Kaplan-Meier curves are good for visualizing differences in survival between two categorical groups. 
+- However, this does not generalize well for assessing the effect of **quantitative** variables.
+
+We may want to quantify an effect size for a single variable, or include more than one variable into a regression model to account for the effects of multiple variables.
+
+The Cox regression model is a **semi-parametric model** that can be used to fit univariable and multivariable regression models that have survival outcomes.
+
+`$$h(t|X_i)=h_0(t)e^{(β_1X_{i1}+\ldots+β_pX_{ip})},$$`
+
+where `\(h(t)\)` is the hazard and `\(h_0(t)\)` is the baseline hazard
+
+---
+
+# Cox Regression - R
+
+Continuing with the `lung` dataset. We can fit regression models for survival data using the `coxph` function from `survival` package. It requires a `Surv` object.
+
+
+```r
+coxph(Surv(time, status) ~ sex, data = lung) %&gt;% broom::tidy()
+```
+
+```
+## # A tibble: 1 x 5
+##   term  estimate std.error statistic p.value
+##   &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;
+## 1 sex     -0.531     0.167     -3.18 0.00149
+```
+
+The quantity of interest from a Cox regression model is the **hazard ratio (HR)**
+  - Represents the ratio of hazards between two groups at any particular point in time
+  - Interpreted as the instantaneous rate of occurrence of the event of interest in those who are still at risk for the event
+  - A HR &lt; 1 indicates reduced hazard of death whereas a HR &gt; 1 indicates an increased hazard of death.
+
+From R output, HR is represented by `\(\exp(\text{estimate}) = e^{-0.5310} = 0.588\)`
+  - HR implicates that 0.588 times as many females are dying as males, at any given time.
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"ratio": "16:9",
+"slideNumberFormat": "%current%",
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

@@ -54,43 +54,49 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 
 # Survival Analysis - Recapping
 
-**Survival analysis** lets you analyze the rates of occurrence of events over time, without assuming the rates are constant. It lets you model:
+**Survival analysis** utilises Time-To-Event (TTE) data where the event can be any *binary* outcome, not necessarily death, without assuming the rates are constant. It lets you model:
 
-- Time until an event occurs
+- Time until an event occurs or has not yet occurred due to censoring
 - Compare the time-to-event between different groups
-- Assess how time-to-event correlates with quantitative variables
+- Assess how time-to-event correlates with quantitative or categorical variables
 
 For example:
 
-- Time from surgery to death
-- Time from start of treatment to cancer progression
-- Time from HIV infection to development of AIDS
-- Time to heart attack
-- Time to onset of substance abuse
-- Time to initiation of sexual activity
-- Time to machine malfunction
+- Well defined time
+  - Time from surgery to death
+  - Time from start of treatment to cancer progression
+  - Time from HIV infection to development of AIDS
+- Unsure time
+  - Time to heart attack
+  - Time to onset of substance abuse
+  - Time to initiation of sexual activity
+  - Time to machine malfunction
+
+> **Important feature:** Survival analysis can handle missing data due to censoring
 
 ---
 
 # Definitions
 
-The **hazard** is the instantaneous event (death) rate at a particular time point $t$. 
+The **hazard** is the instantaneous event (death) rate at a particular time point $t$, conditional on having survived to $t$.
   - Survival analysis **doesn’t** assume the hazard is constant over time. 
   - The cumulative hazard is the total hazard experienced up to time $t$.
 
-The **survival function**, is the probability an individual survives (or, the probability that the event of interest does not occur) up to and including time $t$. 
+The **survival function**, is the probability an individual will survive (or, the probability that the event of interest does not occur) beyond time $t$. 
   - It’s the probability that the event hasn’t occurred yet. 
 
 $$\mathbb{S}(t)=\mathbb{P}(T>t),$$
+
+where $T$ is the time of death
+
 ---
 
 # Definitions - Kaplan-Meier 
 
-where $T$ is the time of death
-
 The **Kaplan-Meier** curve illustrates the survival function. 
 - It estimates $\mathbb{S}(t)$
 - It’s a step function illustrating the cumulative survival probability over time.
+- It's the product of probabilities that the subject did not experience the event in any interval up to time $t$
 
 $$\hat{\mathbb{S}}(t) = \prod_{t_i<t}\left({1 - \frac{d_i}{n_i}}\right),$$
 
@@ -103,16 +109,19 @@ At time 0, the survival probability is 1, i.e., $S(t_0) = 1$
 # Definitions - Censoring
 
 .pull-left[
+
 **Censoring** is a type of missing data problem unique to survival analysis.
 - It occurs when you track the sample/subject through the end of the study and the event never occurs, i.e., no event by end of fixed study period
-- It could also happen due to the sample/subject dropping out of the study for reasons other than death, i.e., withdrawn from study
+- It could also happen due to the sample/subject dropping out of the study for reasons other than death, for example, stopping treatment due to harmful side effects
 - It could also happen due to loss to followup,
 
 If the sample is censored, you only know that the individual survived up to the loss to followup, but you do not know anything about survival after that.
 
 Specifically these are examples of **right censoring**.
 
-Left censoring and interval censoring are also possible, and methods exist to analyze this type of data, but this training will be limited to right censoring.]
+Left censoring and interval censoring are also possible.
+
+]
 
 .pull-right[
 
@@ -198,13 +207,30 @@ glimpse(lung)
 ]
 ---
 
+# Lung dataset
+
+As all the columns of the dataset are numerical, we need to transform the categorical ones into categorical.
+- Use function `mutate_at` from `dplyr` library 
+  - This function mutates the desired variables to a function
+    - The function is `as.factor` to convert the variable to a factor 
+- We will also convert the `sex` variable to `Male` and `Female` for visualization purposes
+
+```{r}
+lung <- lung %>%
+  mutate_at(vars("sex", "ph.ecog"), as.factor) %>%
+  mutate(sex = forcats::fct_recode(sex, "Male" = "1", "Female" = "2"))
+```
+
+
+---
+
 # Distribution of follow-up time
 
 .pull-left[
 
 - Censored subjects still provide information so must be appropriately included in the analysis
 - Distribution of follow-up times is skewed, and may differ between censored patients and those with events
--Follow-up times are always positive
+- Follow-up times are always positive
 
 ```{r echo = T, eval = FALSE}
 ggplot(lung, aes(x = time, 
@@ -240,14 +266,16 @@ ggplot(lung, aes(x = time, fill = as.factor(status))) +
 The first thing to do is to use `Surv()` from `survival` to build the standard survival object. 
 
 The most important parameters are:
-- `time`: Follow-up time for right censored data; for interval data it represents the start time of the interval
+- `time`: Follow-up time for right censored data; 
+  - For interval data it represents the start time of the interval.
+    - 
 - `event`: Normally 0 = alive, 1 = dead
 - `time2`: Ending time of the interval for interval censored
 - `type`: Type of censoring
   - Options: "right", "left", "counting", "interval", "interval2" or "mstate"
   - Default: "right"
 
-> Note that a “+” after the time in the print out of km indicates censoring.
+> Note that a “+” after the time in the print out of km indicates censoring. It is representended by "+" because the true survival time is greater than the value as the event has not yet occured.
 
 ```{r}
 km <- Surv(lung$time, lung$status)
@@ -258,11 +286,9 @@ head(km, 10)
 
 # Kaplan-Meier Analysis
 
-Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any different groupings.
+Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any different variables, or groupings.
 - We'll need to specify an intercept (represented by `~1` in the formula that survfit expects). 
-
-We can 'model' the survival object `km` we created against an intercept
-- We can do this in one step by nesting the `Surv()` function within `survfit()`
+- We can fit the curve in one step by nesting the `Surv()` function within `survfit()`
 - Similarly to how we specify data for linear models with `lm()`, we'll use the `data =` argument to specify which data we’re using. 
 
 ```{r}
@@ -276,14 +302,20 @@ summary(km_fit, times = c(1, 30, 60, 90))
 
 .pull-left[
 
-- The `ggsurvplot` function from the `survminer` package is built on ggplot2, and can be used to create Kaplan-Meier plots.
+- We can plot the `survfit` object using the function `plot` from base
+```{r eval=FALSE, include=TRUE}
+plot(km_fit)
+```
+
+- The `ggsurvplot` function from the `survminer` package is built on ggplot2
 - The default plot shows the step function (solid line) with associated confidence bands (shaded area).
-- The tick marks representing censored patients are shown by default (can be suppressed using the option `censor = FALSE`)
+- The tick marks representing censored patients are shown by default 
+  - Can be suppressed using the option `censor = FALSE`
 
 ]
 
 .pull-right[
-```{r}
+```{r fig.height=6}
 ggsurvplot(km_fit)
 ```
 
@@ -291,14 +323,36 @@ ggsurvplot(km_fit)
 
 ---
 
+# Kaplan-Meier plot
+
+We can also plot the KM curve upside down; this shows the probability of the event.
+- It shows death (or the event of interest) instead of survival
+- We can do this by adding the option `fun = event` in both plot and ggsurvplot
+
+.pull-left[
+```{r fig.height=5}
+plot(km_fit, fun = 'event')
+```
+
+]
+
+.pull-right[
+```{r fig.height=5}
+ggsurvplot(km_fit, fun = 'event')
+```
+
+]
+---
+
 # Estimating x-year survival
 
 .pull-left[
-Often of interest is the probability of surviving beyond a certain number ($x$) of years.
+
+Often of interest is the probability of surviving beyond a certain number x of years.
 
 For example, to estimate the probability of surviving to $1$ year:
 - Use `summary` with the `times` argument 
-- *Note* the `time` variable in the `lung` data is actually in days
+  - *Note* the `time` variable in the `lung` data is actually in days
 
 ```{r}
 summary(km_fit, times = 365)
@@ -309,6 +363,7 @@ The $1$-year probability of survival in this study is `r round(summary(km_fit, t
 ]
 
 .pull-right[
+
 ```{r, message = FALSE, echo = FALSE, fig.height = 5}
 plot_main <- 
   ggsurvplot(
@@ -330,6 +385,7 @@ plot1$plot <- plot1$plot +
 plot1
 ```
 
+]
 ---
 
 # Estimating median survival time
@@ -364,27 +420,75 @@ plot2
 
 ---
 
-# $x$-year survival and the survival curve
+# Comparing survival times between groups
 
-The $1$-year survival probability is the point on the y-axis that corresponds to $1$ year on the x-axis for the survival curve.
+.pull-left[
+- The **log-rank test** equally weights observations over the entire follow-up time
+  - Most common way to compare survival times between groups
 
-```{r, message = FALSE, echo = FALSE, fig.height = 5}
-plot_main <- 
-  ggsurvplot(
-    data = lung, 
-    fit = km_fit,
-    xlab = "Months",
-    legend = "none",
-    xscale = 30.4,
-    break.x.by = 182.4, 
-    risk.table = TRUE,
-    risk.table.y.text = FALSE)
-plot1 <- plot_main
-plot1$plot <- plot1$plot + 
-  geom_segment(x = 365, xend = 365, y = -0.05, yend = 0.4092416, 
-               size = 1.5) +
-  geom_segment(x = 365, xend = -40, y = 0.4092416, yend = 0.4092416,
-               size = 1.5, 
-               arrow = arrow(length = unit(0.2, "inches"))) 
-plot1
+We get the log-rank p-value using the `survdiff` function. For example, we can test whether there was a difference in survival time according to sex.
+
+```{r}
+survdiff(Surv(time, status) ~ sex, data = lung)
 ```
+
+]
+
+.pull-right[
+```{r fig.height=3}
+ggsurvplot(survfit(Surv(time, status) ~ sex, 
+                   data = lung), 
+           pval = TRUE)
+```
+
+]
+
+---
+
+# Cox-Regression
+
+Kaplan-Meier curves are good for visualizing differences in survival between two categorical groups. 
+- Does not generalize well for assessing the effect of **quantitative** variables.
+
+We may want to quantify an effect size for a single variable, or include more than one variable into a regression model to account for the effects of multiple variables.
+
+The Cox regression model can be used to fit univariable and multivariable regression models that have survival outcomes.
+
+$$h(t|X_i)=h_0(t)e^{(β_1X_{i1}+\ldots+β_pX_{ip})},$$
+
+where $h(t)$ is the hazard and $h_0(t)$ is the baseline hazard
+
+The Cox model relies on the assumption of proportional hazards (PH) across different covariates, i.e., the hazard ratio (HR) is assumed to be constant over time, even though the hazards vary.
+
+---
+
+# Cox Regression - R
+
+Continuing with the `lung` dataset. We can fit regression models for survival data using the `coxph` function from `survival` package. 
+  - It requires a `Surv` object.
+
+```{r}
+cox_fit <- coxph(Surv(time, status) ~ sex, data = lung)
+cox_fit %>% broom::tidy()
+```
+
+The quantity of interest from a Cox regression model is the **hazard ratio (HR)**
+  - Represents the ratio of hazards between two groups at any particular point in time
+  - Interpreted as the instantaneous rate of occurrence of the event of interest in those who are still at risk for the event
+  - A HR < 1 indicates reduced hazard of death whereas a HR > 1 indicates an increased hazard of death.
+
+From R output, HR is represented by $\exp(\text{estimate}) = e^{-0.5310} = 0.588$
+  - HR implicates that at any point in time females have 0.588 times the risk of dying as males, i.e., females are about 40% less likely to die than males.
+  
+---
+
+# Check Cox assumption
+
+To test for the proportional-hazards (PH) assumption we are going to use the function `cox.zph` from `survival` package.
+
+```{r}
+cox.zph(cox_fit)
+```
+
+From the output above, the test is not statistically significant using an $\alpha$ of 5% for the covariate, and the global test is also not statistically significant. 
+- Therefore, we **can** assume the proportional hazards.
