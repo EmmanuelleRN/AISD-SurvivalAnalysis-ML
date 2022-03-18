@@ -221,6 +221,7 @@ The 10 columns represent:
 
 .pull-right[
 
+
 ```r
 glimpse(lung)
 ```
@@ -241,6 +242,7 @@ glimpse(lung)
 ```
 
 ]
+
 ---
 
 # Lung dataset
@@ -300,7 +302,7 @@ The first thing to do is to use `Surv()` from `survival` to build the standard s
 The most important parameters are:
 - `time`: Follow-up time for right censored data; 
   - For interval data it represents the start time of the interval.
-    - 
+    - The time until event is unkown and could be anywhere within the interval, so we use start time.
 - `event`: Normally 0 = alive, 1 = dead
 - `time2`: Ending time of the interval for interval censored
 - `type`: Type of censoring
@@ -323,7 +325,7 @@ head(km, 10)
 
 # Kaplan-Meier Analysis
 
-Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any different variables, or groupings.
+Now, let's fit a survival curve with the `survfit()` function. We will create a survival curve that doesn't consider any explanatory variables, or groupings.
 - We'll need to specify an intercept (represented by `~1` in the formula that survfit expects). 
 - We can fit the curve in one step by nesting the `Surv()` function within `survfit()`
 - Similarly to how we specify data for linear models with `lm()`, we'll use the `data =` argument to specify which data we’re using. 
@@ -521,7 +523,7 @@ The Cox regression model can be used to fit univariable and multivariable regres
 
 where `\(h(t)\)` is the hazard and `\(h_0(t)\)` is the baseline hazard
 
-The Cox model relies on the assumption of proportional hazards (PH) across different covariates, i.e., the hazard ratio (HR) is assumed to be constant over time, even though the hazards vary.
+The Cox model relies on the assumption of proportional hazards (PH), i.e., the hazard ratio (HR) is assumed to be constant over time for each covariate, even though the hazards vary. For example, the hazards for males and females may be changing over time, but their ratio stays the same.
 
 ---
 
@@ -570,6 +572,133 @@ cox.zph(cox_fit)
 
 From the output above, the test is not statistically significant using an `\(\alpha\)` of 5% for the covariate, and the global test is also not statistically significant. 
 - Therefore, we **can** assume the proportional hazards.
+
+---
+
+# Mutivariate Anaylis - Lung dataset
+
+Most of the time we will have more than one explanatory variable of interest.
+
+For this example, we will use the patient age, sex, ECOG status and the amount of weight loss as covariates.
+  - Sex is a factor with two categories
+  - ECOG status is a factor with 6 categories
+
+With three or more categories, we **should** choose one level to be the **reference level** (with defined hazard ratio 1.0). 
+- R will automatically pick one to be a reference
+- For n levels, there will be n-1 variables representing the hazard ratio compared to subjects in the reference level. 
+
+We will use the function `analyse_multivariate` from `survivalAnalysis`.
+
+---
+
+# Multivariate Analysis Example - Lung dataset
+
+
+```r
+library(tidytidbits)
+library(survivalAnalysis)
+
+multivar_fit &lt;- lung %&gt;%
+  # variables that represent time and status within vars() function
+  analyse_multivariate(vars(time, status), 
+                       # select covariates using the vars() function
+                       covariates = vars(age, sex, ph.ecog, wt.loss))
+
+multivar_fit$summaryAsFrame
+```
+
+```
+##    factor.id factor.name factor.value        HR  Lower_CI   Upper_CI    Inv_HR
+## 1 sex:Female         sex       Female 0.5584717 0.3955858  0.7884273 1.7906010
+## 2    wt.loss     wt.loss &lt;continuous&gt; 0.9909481 0.9780141  1.0040532 1.0091345
+## 3        age         age &lt;continuous&gt; 1.0131906 0.9941613  1.0325842 0.9869811
+## 4  ph.ecog:1     ph.ecog            1 1.5835452 1.0528108  2.3818292 0.6314944
+## 5  ph.ecog:2     ph.ecog            2 2.7309998 1.6638158  4.4826836 0.3661663
+## 6  ph.ecog:3     ph.ecog            3 8.6863048 1.1353408 66.4574800 0.1151238
+##   Inv_Lower_CI Inv_Upper_CI            p
+## 1   1.26834783    2.5278964 9.293721e-04
+## 2   0.99596313    1.0224801 1.749341e-01
+## 3   0.96844403    1.0058730 1.755352e-01
+## 4   0.41984539    0.9498383 2.730962e-02
+## 5   0.22308066    0.6010281 7.080711e-05
+## 6   0.01504722    0.8807928 3.732168e-02
+```
+
+---
+
+# Multivariate Analysis Example - Lung dataset
+
+The summary on the previous slide shows:
+  - The HR for all explanatory variables with their CI 
+  - The Inverted HR with their CI
+  - The pvalue of the test, using Wald test, that shows that wt.loss and age are not significant
+
+We can output that table in a more visual way by using the function `forest_plot` from `survivalAnalysis`.
+
+
+```r
+forest_plot(multivar_fit,
+            orderer = ~order(HR),
+            HR_x_breaks = c(0.25, 0.5, 1, 1.5, 2))
+```
+
+![](logreg_slides_files/figure-html/unnamed-chunk-24-1.png)&lt;!-- --&gt;
+
+---
+
+# Multivariate Analysis Example - Lung dataset
+
+We can do a likelihood test by using the function `drop1`. Also, for the likelihood test, we need to remove the `NA` values by using the function `na.omit` and `update` function to update the `coxph` result.
+
+
+```r
+(l_test &lt;- update(multivar_fit$coxph, data =lung %&gt;% na.omit()) %&gt;%
+  drop1(test = "Chi"))
+```
+
+```
+## Single term deletions
+## 
+## Model:
+## Surv(time, status) ~ age + sex + ph.ecog + wt.loss
+##         Df    AIC     LRT Pr(&gt;Chi)   
+## &lt;none&gt;     1004.8                    
+## age      1 1003.1  0.2543 0.614078   
+## sex      1 1010.5  7.7040 0.005510 **
+## ph.ecog  3 1013.3 14.5062 0.002291 **
+## wt.loss  1 1005.5  2.6336 0.104626   
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+```
+
+The likelihood test gave the same conclusion as the Wald test.
+
+---
+
+# Multivariate Analysis Example - Lung dataset
+
+Another important metric is the Concordance (C) statistic:
+  - Used to assess the ability of a risk factor to predict outcome, i.e., gives the probability a randomly selected patient who experienced an event had a higher risk score than a patient who had not experienced the event. 
+  - It helps us understand the **accuracy** of the model.
+  - It ranges from 0.5 (poor model) to 1 (perfect fit)
+
+
+```r
+multivar_fit$summary$concordance
+```
+
+```
+##          C      se(C) 
+## 0.64705882 0.02633085
+```
+
+---
+
+# References
+
+Dirk F. Moore, Applied Survival Analysis Using R (Springer, 2016)
+
+David G. Kleinbaum, Mitchel Klein, Survival Analysis: A Self-Learning Text, Third Edition (Springer, 2011)
     </textarea>
 <style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
 <script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
